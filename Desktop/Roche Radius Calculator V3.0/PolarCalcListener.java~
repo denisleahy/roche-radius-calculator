@@ -1,0 +1,175 @@
+/*
+Author: Janet Leahy
+Version: Aug.1, 2014
+
+Class containing code that responds to the "calculate radius" button being pressed in the polar coordinate calculator.
+ */
+
+import java.awt.event.ActionListener;
+import java.awt.event.ActionEvent;
+import javax.swing.JTextField;
+import javax.swing.JLabel;
+import java.text.DecimalFormat;
+import java.lang.NumberFormatException;
+import java.io.IOException;
+import java.text.DecimalFormat;
+import java.lang.Math;
+
+public class PolarCalcListener implements ActionListener {
+
+    //if theta-90 and phi are less than RANGE (in radians) and F is less
+    //than UPPER_F, RL1 is returned.
+    public static final double RANGE = .02;  //approx. 1 degree
+    public static final double UPPER_F = .9998;
+
+    private boolean degMode;
+
+    private JTextField QField;
+    private JTextField ThetaField;
+    private JTextField PhiField;
+    private JTextField FField;
+    private JTextField PField;
+    private JLabel RadiusLabel;
+    private JLabel ErrorLabel;
+    private DecimalFormat f;
+
+
+    public PolarCalcListener(JTextField QField, JTextField ThetaField, JTextField PhiField, JTextField FField, JTextField PField, JLabel RadiusLabel, JLabel ErrorLabel) {
+	this.QField = QField;
+	this.ThetaField = ThetaField;
+	this.PhiField = PhiField;
+	this.FField = FField;
+	this.PField = PField;
+	this.RadiusLabel = RadiusLabel;
+	this.ErrorLabel = ErrorLabel;
+
+	//sets the desired number of decimal places (now 7)
+	f = new DecimalFormat("##.0000000");
+	
+    }
+
+    //this method is called by the radio buttons in the polar frame
+    public void setDegMode(boolean setting) {
+	degMode = setting;
+    }
+
+
+    public void actionPerformed(ActionEvent e) {
+	double q;
+	double theta;
+	double phi;
+	double F;
+	double p;
+	double radius;
+
+	try {
+	    q = Double.parseDouble(QField.getText());
+	    theta = Double.parseDouble(ThetaField.getText());
+	    phi = Double.parseDouble(PhiField.getText());
+	    F = Double.parseDouble(FField.getText());
+	    p = Double.parseDouble(PField.getText());
+
+	    radius = findR(q, theta, phi, F, p, degMode);
+
+	    //displays the result
+	    RadiusLabel.setText("R(theta, phi):  " + f.format(radius));
+
+	    //resets the ErrorLabel
+	    ErrorLabel.setText("");
+	}
+	catch(NumberFormatException ex) {
+	    ErrorLabel.setText("All values entered must be numeric.");
+	}
+	catch(NullPointerException ex) {
+	    ErrorLabel.setText("The value for q is outside the bounds of the table.");
+	}
+	catch(ThetaOutOfBoundsException ex) {
+	    String range;
+	    if (degMode) {range = "0 and 180 degrees";}
+	    else {range = "0 and pi radians";}
+	    ErrorLabel.setText("The value for theta must be between "+range);
+	}
+	catch(FOutOfBoundsException ex) {
+	    ErrorLabel.setText("The value for F must be between 0.1 and 1, inclusive");
+	}
+	catch(POutOfBoundsException ex) {
+	    ErrorLabel.setText("The value for p must be between 0 and 2, inclusive");
+	}
+	catch(IOException ex) {
+	    ex.printStackTrace();
+	}
+    }
+
+
+
+    //performs any necessary input-checking and uses the calculateR method to 
+    // find the desired radius
+    public static double findR(double q, double theta, double phi, double F, double p, boolean degModeOn) throws NumberFormatException, NullPointerException, ThetaOutOfBoundsException, FOutOfBoundsException, POutOfBoundsException, IOException {
+	double [] values;
+
+
+	//converts degrees to radians if degree mode was selected
+	if (degModeOn) {
+	    theta = theta*Math.PI/180;
+	    phi = phi*Math.PI/180;
+	}
+
+	//ensures theta is in the correct range
+	if (theta%(Math.PI*2) > Math.PI) {
+	    throw new ThetaOutOfBoundsException();
+	}
+
+	//ensures fillout factor F is in the correct range
+	if (F < 0.1 || F > 1.0) {
+	    throw new FOutOfBoundsException();
+	}
+
+	//ensures p is in the correct range
+	if (p < 0 || p > 2) {
+	    throw new POutOfBoundsException();
+	}
+
+	//calls the static method of CalcButtonListener for the input q.
+	//method returns an array of pertinent values, from which we can
+        //access the ones we need.
+        values = CalcButtonListener.calculateValues(q, p);
+
+	return calculateR(q, theta, phi, F, p, values[CalcButtonListener.RL1_INDEX], values[CalcButtonListener.OMEGA1_INDEX]);
+
+    }
+
+
+    //given q, spherical angle theta, phi, fillout factor F and RL1 and Omega1,
+    // calculates the radius using root-finding. All inputs are assumed to be
+    // in the correct ranges - error checking is handles in the findR function
+    public static double calculateR(double q, double theta, double phi, double F, double p, double RL1, double omega1) {
+	double radius;
+	double lowerBound;
+	double upperBound;
+
+	//because of the nature of the equation, the root finding method
+	//does not work at coordinates very close to the point and fillout
+	//factor extremely close to 1, so we must
+	//deal with this case seperately, simply returning RL1.
+	if (Math.abs((theta-Math.PI/2)%(Math.PI*2))<RANGE && Math.abs(phi%(Math.PI*2))<RANGE && F >UPPER_F) {
+	    radius = RL1;
+	}
+
+	else {
+	    //the radius will be between 0 and RL1 inclusive, so we will
+	    //set these bounds to be .01RL1 and 1.1RL1
+	    lowerBound = .01*RL1;
+	    upperBound = 1.01*RL1;
+	    
+	    //creates an OmegaFunction object with current parameters and
+	    //finds the root of the equation using Brent's method in Equations
+	    OmegaFunction anOmegaFunction = new OmegaFunction(q, theta, phi, F, p, omega1);
+	    radius = Equations.findRoot(lowerBound, upperBound, anOmegaFunction);
+	    }
+
+	return radius;
+    }
+
+
+
+}
